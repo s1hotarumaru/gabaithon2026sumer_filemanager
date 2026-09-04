@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using FileOrganizer.Shared.Models;
 using FileOrganizer.UI.Mvvm;
 using FileOrganizer.UI.Services;
+using FileOrganizer.Widgets.QuickLook;
 using Microsoft.Win32;
 
 namespace FileOrganizer.UI.ViewModels;
@@ -60,6 +61,9 @@ public sealed class SettingsViewModel : ObservableObject
     public AsyncRelayCommand SaveCommand { get; }
     public AsyncRelayCommand ExportDiagnosticsCommand { get; }
 
+    /// <summary>ショートカットの保存に成功した際に、正規化後の表記（例: "f" → "F"）で通知する。</summary>
+    public event Action<string>? QuickLookShortcutSaved;
+
     public int StabilityCheckIntervalMs { get => _stabilityCheckIntervalMs; set => SetProperty(ref _stabilityCheckIntervalMs, value); }
     public int PeriodicScanIntervalHours { get => _periodicScanIntervalHours; set => SetProperty(ref _periodicScanIntervalHours, value); }
     public bool ApplyAllMatchingRules { get => _applyAllMatchingRules; set => SetProperty(ref _applyAllMatchingRules, value); }
@@ -107,9 +111,9 @@ public sealed class SettingsViewModel : ObservableObject
 
     private async Task SaveAsync()
     {
-        if (!string.Equals(QuickLookShortcut.Trim(), "Space", StringComparison.OrdinalIgnoreCase))
+        if (!QuickLookShortcutKey.TryParse(QuickLookShortcut, out _, out string normalizedShortcut))
         {
-            _showMessage("現在のQuick LookショートカットはSpaceキーだけに対応しています。");
+            _showMessage("Quick Lookのショートカットは、英字A〜Z・数字0〜9のいずれか1文字、またはSpace/Enter/Tab/Insert/F1〜F12で指定してください。");
             return;
         }
 
@@ -120,7 +124,7 @@ public sealed class SettingsViewModel : ObservableObject
             PeriodicScanIntervalHours = Math.Clamp(PeriodicScanIntervalHours, 1, 168),
             ApplyAllMatchingRules = ApplyAllMatchingRules,
             IsQuickLookEnabled = IsQuickLookEnabled,
-            QuickLookShortcut = "Space",
+            QuickLookShortcut = normalizedShortcut,
             PythonPort = Math.Clamp(PythonPort, 0, 65535),
             UsePreloadedSlmModel = UsePreloadedSlmModel,
             SlmModelPath = SlmModelPath.Trim(),
@@ -132,6 +136,8 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             await _gateway.SaveSettingsAsync(settings);
+            QuickLookShortcut = normalizedShortcut; // 表示も正規化後の表記に揃える（例: "f" → "F"）
+            QuickLookShortcutSaved?.Invoke(normalizedShortcut);
             _showMessage(_gateway.IsBackendConnected
                 ? "設定を保存しました。"
                 : "設定をUI確認用メモリへ保存しました（OS設定は変更していません）。");

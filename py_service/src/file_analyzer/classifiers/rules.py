@@ -13,6 +13,8 @@ class RuleBasedClassifier:
         "invoice": ("請求書", "請求金額", "支払期限", "お支払期限", "振込先"),
         "meeting_minutes": ("議事録", "出席者", "議題", "決定事項"),
         "contract": ("契約書", "甲", "乙", "契約期間", "署名"),
+        "lecture_material": ("講義資料", "レジュメ", "シラバス", "講義", "履修"),
+        "specification": ("仕様書", "要件定義", "設計書"),
         "other": (),
     }
     TYPE_PRIORITY: tuple[DocumentType, ...] = (
@@ -20,6 +22,8 @@ class RuleBasedClassifier:
         "invoice",
         "meeting_minutes",
         "contract",
+        "specification",
+        "lecture_material",
     )
     DATE_PATTERNS = (
         re.compile(r"(?<!\d)(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日"),
@@ -31,10 +35,20 @@ class RuleBasedClassifier:
         re.compile(r"((?:株式会社|有限会社|合同会社)[^\n]{1,80})"),
     )
 
+    # ファイル名中のキーワード一致は、作成者が意図して付けた強いシグナルとして本文中の
+    # 偶発的な一致より重く扱う（本文が複数種別のキーワードに言及する文書――例えば本アプリ自身の
+    # 仕様書のように「領収書」「請求書」「講義資料」等を分類例として列挙する文書――では、
+    # 本文一致だけでは種別が割れて誤判定しやすいため）。
+    FILENAME_KEYWORD_WEIGHT = 5
+
     def classify(self, text: str, original_file_name: str = "") -> ClassificationCandidate:
-        searchable = f"{text}\n{Path(original_file_name).stem}"
+        filename_stem = Path(original_file_name).stem
+        searchable = f"{text}\n{filename_stem}"
         scores: dict[DocumentType, int] = {
-            document_type: sum(searchable.count(keyword) for keyword in keywords)
+            document_type: (
+                sum(text.count(keyword) for keyword in keywords)
+                + sum(filename_stem.count(keyword) for keyword in keywords) * self.FILENAME_KEYWORD_WEIGHT
+            )
             for document_type, keywords in self.KEYWORDS.items()
         }
         best_type: DocumentType = "other"

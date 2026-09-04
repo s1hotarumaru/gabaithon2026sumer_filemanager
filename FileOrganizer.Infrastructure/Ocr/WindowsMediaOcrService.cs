@@ -154,13 +154,14 @@ public sealed class WindowsMediaOcrService : IOcrService
                 }
 
                 OcrResult result = await engine.RecognizeAsync(ocrInput).AsTask(ct).ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(result.Text))
+                string pageText = BuildRecognizedText(result);
+                if (!string.IsNullOrEmpty(pageText))
                 {
                     if (fullText.Length > 0)
                     {
                         fullText.Append('\n');
                     }
-                    fullText.Append(result.Text);
+                    fullText.Append(pageText);
                 }
             }
             finally
@@ -171,6 +172,70 @@ public sealed class WindowsMediaOcrService : IOcrService
 
         return fullText.ToString();
     }
+
+    /// <summary>
+    /// <see cref="OcrResult.Text"/>をそのまま使わず、行・単語から自前で再構成する。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>背景（実機で発見した不具合）</b>: <c>Windows.Media.Ocr</c>は日本語の連続漢字/かなを
+    /// 単語分割できず、1文字ずつ別々の<see cref="OcrWord"/>として認識する。<see cref="OcrResult.Text"/>
+    /// （および<see cref="OcrLine.Text"/>）はこの単語列を単純に半角スペースで連結するため、
+    /// 「請求書」が「請 求 書」のように文字間へ余計な空白が入った文字列になってしまう。
+    /// この結果、<c>RuleCondition.Type == "ocr_contains"</c>の部分一致判定や、
+    /// py_service側<c>RuleBasedClassifier</c>のキーワード完全一致判定（「請求書」「領収書」等）が
+    /// 恒久的に不一致となり、AI/ルールベースのカテゴリ分類・リネームが一切機能しなくなる
+    /// （実際に発生した不具合: 領収書/請求書PDFがAIカテゴリ条件付きリネームルールに一度も一致せず、
+    /// 常に後続のMoveルールへフォールバックしていた）。
+    /// </para>
+    /// <para>
+    /// <b>対処</b>: 単語同士を連結する際、両側の境界文字が共にCJK文字（漢字・ひらがな・カタカナ）の
+    /// 場合はスペースを挿入しない。英数字を含む単語同士（型番・金額・URL等）の境界では、
+    /// 元々OCRが正しく分かち書きしているため従来通りスペースを維持する。
+    /// </para>
+    /// </remarks>
+    private static string BuildRecognizedText(OcrResult result)
+    {
+        var sb = new StringBuilder();
+        foreach (OcrLine line in result.Lines)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Append('\n');
+            }
+            AppendLineWithoutSpuriousCjkSpaces(sb, line);
+        }
+        return sb.ToString();
+    }
+
+    private static void AppendLineWithoutSpuriousCjkSpaces(StringBuilder sb, OcrLine line)
+    {
+        string? previousWord = null;
+        foreach (OcrWord word in line.Words)
+        {
+            string current = word.Text;
+            if (string.IsNullOrEmpty(current))
+            {
+                continue;
+            }
+
+            if (previousWord is { Length: > 0 } && !(IsCjkChar(previousWord[^1]) && IsCjkChar(current[0])))
+            {
+                sb.Append(' ');
+            }
+
+            sb.Append(current);
+            previousWord = current;
+        }
+    }
+
+    /// <summary>漢字・ひらがな・カタカナ（全角/半角）かどうかを判定する。</summary>
+    private static bool IsCjkChar(char c) =>
+        (c >= '一' && c <= '鿿')   // CJK統合漢字
+        || (c >= '㐀' && c <= '䶿') // CJK統合漢字拡張A
+        || (c >= '぀' && c <= 'ゟ') // ひらがな
+        || (c >= '゠' && c <= 'ヿ') // カタカナ
+        || (c >= 'ｦ' && c <= 'ﾝ'); // 半角カタカナ
 
     private static async Task<SoftwareBitmap?> LoadImageBitmapAsync(string filePath, CancellationToken ct)
     {

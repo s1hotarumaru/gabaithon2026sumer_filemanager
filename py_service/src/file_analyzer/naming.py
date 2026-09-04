@@ -9,6 +9,8 @@ DOCUMENT_TYPE_LABELS = {
     "invoice": "請求書",
     "meeting_minutes": "議事録",
     "contract": "契約書",
+    "lecture_material": "講義資料",
+    "specification": "仕様書",
     "other": "その他",
 }
 _INVALID_WINDOWS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')

@@ -22,6 +22,8 @@ class AnalysisCoordinator:
         "invoice": ("請求書",),
         "meeting_minutes": ("議事録",),
         "contract": ("契約書",),
+        "lecture_material": ("講義資料", "レジュメ", "シラバス"),
+        "specification": ("仕様書", "要件定義", "設計書"),
         "other": (),
     }
 

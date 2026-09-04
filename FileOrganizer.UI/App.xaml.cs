@@ -37,7 +37,12 @@ public partial class App : Application
 
         await _mainViewModel.InitializeAsync(_applicationCancellation.Token);
         if (!_applicationCancellation.IsCancellationRequested)
+        {
             _trayIcon?.SetMonitoringState(_mainViewModel.Dashboard.IsMonitoring);
+            // InitializeWidgets()の時点ではSettings未ロードのため既定ショートカットで起動している。
+            // 読み込み完了後、保存済みの値を反映する。
+            _quickLookController?.UpdateShortcut(_mainViewModel.Settings.QuickLookShortcut);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -51,6 +56,8 @@ public partial class App : Application
             _dropShelfWindow.Close();
         }
         _trayIcon?.Dispose();
+        if (_mainViewModel is not null)
+            _mainViewModel.Settings.QuickLookShortcutSaved -= OnQuickLookShortcutSaved;
         _quickLookController?.Dispose();
         if (_backendGateway is not null)
             _backendGateway.ActivityOccurred -= OnBackendActivity;
@@ -94,13 +101,17 @@ public partial class App : Application
         {
             _quickLookController = new QuickLookController(
                 () => _mainViewModel?.Settings.IsQuickLookEnabled == true,
-                Dispatcher);
+                Dispatcher,
+                _mainViewModel.Settings.QuickLookShortcut);
+            _mainViewModel.Settings.QuickLookShortcutSaved += OnQuickLookShortcutSaved;
         }
         catch (Exception ex)
         {
             _mainViewModel.ShowMessage($"Quick Lookを初期化できませんでした: {ex.Message}");
         }
     }
+
+    private void OnQuickLookShortcutSaved(string normalizedShortcut) => _quickLookController?.UpdateShortcut(normalizedShortcut);
 
     private void ShowMainWindow()
     {

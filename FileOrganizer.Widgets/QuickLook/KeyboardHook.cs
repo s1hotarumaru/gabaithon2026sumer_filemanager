@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace FileOrganizer.Widgets.QuickLook;
 
 /// <summary>
-/// Quick Look用の低レベルキーフック。フック内ではSpaceのKeyDown判定だけを行い、
+/// Quick Look用の低レベルキーフック。フック内では対象キーのKeyDown判定だけを行い、
 /// Explorer/IME/フォーカス調査やファイル読取は呼び出し元へ遅延する。
 /// </summary>
 public sealed class KeyboardHook : IDisposable
@@ -14,7 +14,6 @@ public sealed class KeyboardHook : IDisposable
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
     private const int WmSysKeyUp = 0x0105;
-    private const int VkSpace = 0x20;
     private const int VkShift = 0x10;
     private const int VkControl = 0x11;
     private const int VkMenu = 0x12;
@@ -22,12 +21,18 @@ public sealed class KeyboardHook : IDisposable
     private const int VkRightWindows = 0x5C;
 
     private readonly HookProc _callback;
+    private readonly int _targetVirtualKey;
     private IntPtr _hook;
-    private int _spaceDown;
+    private int _targetKeyDown;
     private bool _disposed;
 
-    public KeyboardHook()
+    /// <param name="targetVirtualKey">
+    /// 監視する仮想キーコード。既定はSpace（<see cref="QuickLookShortcutKey.DefaultVirtualKeyCode"/>）。
+    /// <see cref="QuickLookShortcutKey"/>で設定文字列から変換した値を渡す。
+    /// </param>
+    public KeyboardHook(int targetVirtualKey = QuickLookShortcutKey.DefaultVirtualKeyCode)
     {
+        _targetVirtualKey = targetVirtualKey;
         _callback = HookCallback;
         using Process process = Process.GetCurrentProcess();
         using ProcessModule? module = process.MainModule;
@@ -39,21 +44,21 @@ public sealed class KeyboardHook : IDisposable
         }
     }
 
-    public event EventHandler? SpacePressed;
+    public event EventHandler? KeyPressed;
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
     {
-        // 最頻経路を最小化: Space KeyDown以外はWin32/COM調査を一切せず即座に次へ流す。
-        if (code >= 0 && Marshal.ReadInt32(lParam) == VkSpace)
+        // 最頻経路を最小化: 対象キーのKeyDown以外はWin32/COM調査を一切せず即座に次へ流す。
+        if (code >= 0 && Marshal.ReadInt32(lParam) == _targetVirtualKey)
         {
             if (wParam == (IntPtr)WmKeyUp || wParam == (IntPtr)WmSysKeyUp)
             {
-                Interlocked.Exchange(ref _spaceDown, 0);
+                Interlocked.Exchange(ref _targetKeyDown, 0);
             }
             else if ((wParam == (IntPtr)WmKeyDown || wParam == (IntPtr)WmSysKeyDown) &&
-                     Interlocked.Exchange(ref _spaceDown, 1) == 0 && !IsModifierDown())
+                     Interlocked.Exchange(ref _targetKeyDown, 1) == 0 && !IsModifierDown())
             {
-                SpacePressed?.Invoke(this, EventArgs.Empty);
+                KeyPressed?.Invoke(this, EventArgs.Empty);
             }
         }
         return CallNextHookEx(_hook, code, wParam, lParam);

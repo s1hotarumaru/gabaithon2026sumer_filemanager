@@ -383,8 +383,12 @@ public sealed class ProcessingCoordinator
     /// <summary>
     /// AI_IMPLEMENTATION_GUIDE.md §3.2の<c>POST /api/v1/analyze</c>リクエスト例に合わせた既定の
     /// <c>extract_fields</c>。ルール側にフィールド一覧を指定する仕組みが無いため固定値を使用する。
+    /// <c>title</c>は<c>{date}_{company}_{document_type}</c>相当を、py_service側（<c>naming.suggest_base_name</c>）が
+    /// 組織名/日付未検出時のフォールバック（「発行元不明」「日付不明」）まで含めて1トークンで
+    /// 組み立て済みの値として提供する。個別トークンを並べる代わりに<c>{title}</c>だけを使う
+    /// パターンなら、値が欠けても生の"{xxx}"が残る心配がない。
     /// </summary>
-    private static readonly List<string> DefaultExtractFields = new() { "date", "company", "document_type", "category" };
+    private static readonly List<string> DefaultExtractFields = new() { "date", "company", "document_type", "category", "title" };
 
     /// <summary><paramref name="rules"/>に、OCR/AI解析を必要とする条件を持つ有効ルールが1件でもあるかを判定する。</summary>
     private static bool RequiresAiEnrichment(IReadOnlyList<RuleModel> rules)

@@ -383,7 +383,11 @@ public sealed class ConditionEditorViewModel : ObservableObject
                 "size_mb" => "例: 10",
                 "days_old" => "例: 30",
                 "ocr_contains" => "例: 領収書",
-                "ai_category" => "例: finance",
+                // AIカテゴリの値はpy_service（DOCUMENT_TYPE_LABELS）が返す日本語ラベルそのもの。
+                // 複数種別を対象にしたい場合は演算子を「いずれか」にしてカンマ区切りで指定する
+                // （「含む」1つのカテゴリ名に対してのみ意味を持つ。カンマ区切り文字列との組み合わせは
+                //   常に不一致になり、リネーム/移動が一切実行されない不具合の原因になる）。
+                "ai_category" => "例: 領収書、請求書、議事録、契約書、その他",
                 _ => "例: 値"
             };
             return Operator == "in" ? baseExample + "（カンマ区切りで複数指定可: .jpg, .png）" : baseExample;

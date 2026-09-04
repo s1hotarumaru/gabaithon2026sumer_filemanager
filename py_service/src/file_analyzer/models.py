@@ -3,12 +3,22 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-DocumentType = Literal["receipt", "invoice", "meeting_minutes", "contract", "other"]
+DocumentType = Literal[
+    "receipt",
+    "invoice",
+    "meeting_minutes",
+    "contract",
+    "lecture_material",
+    "specification",
+    "other",
+]
 DOCUMENT_TYPES: tuple[DocumentType, ...] = (
     "receipt",
     "invoice",
     "meeting_minutes",
     "contract",
+    "lecture_material",
+    "specification",
     "other",
 )
 

@@ -12,6 +12,34 @@ from ..models import DOCUMENT_TYPES, ClassificationCandidate
 
 _EXPECTED_KEYS = {"document_type", "organization", "document_date", "confidence", "reason"}
 
+# JSON Schema for grammar-constrained decoding (llama-cpp-python builds a GBNF
+# grammar from this via response_format={"type": "json_object", "schema": ...}).
+# This forces the model's raw token output to already satisfy document_type's
+# enum, the date pattern, and the required/closed key set, instead of relying
+# on parse_slm_json() to reject bad output after the fact and fall back to the
+# (less accurate) rule-based classifier. Ranges (confidence 0-1) and semantic
+# validity (e.g. a real calendar date) still need parse_slm_json()'s checks,
+# since grammar constraints are syntactic only.
+_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "document_type": {"type": "string", "enum": list(DOCUMENT_TYPES)},
+        "organization": {
+            "anyOf": [{"type": "string", "maxLength": 100}, {"type": "null"}]
+        },
+        "document_date": {
+            "anyOf": [
+                {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+                {"type": "null"},
+            ]
+        },
+        "confidence": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+        "reason": {"anyOf": [{"type": "string", "maxLength": 200}, {"type": "null"}]},
+    },
+    "required": ["document_type", "organization", "document_date", "confidence", "reason"],
+    "additionalProperties": False,
+}
+
 
 def _first_json_object(value: str) -> dict[str, Any]:
     decoder = json.JSONDecoder()
@@ -152,7 +180,7 @@ class LlamaCppSlmClassifier:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     max_tokens=self.max_tokens,
-                    response_format={"type": "json_object"},
+                    response_format={"type": "json_object", "schema": _RESPONSE_SCHEMA},
                 )
                 content = response["choices"][0]["message"]["content"]
                 if not isinstance(content, str):
@@ -190,12 +218,28 @@ class LlamaCppSlmClassifier:
         return f"""あなたは文書分類器です。説明文やMarkdownを付けずJSONオブジェクトだけを返してください。
 次の文書を分類してください。
 許可するdocument_type: {json.dumps(DOCUMENT_TYPES, ensure_ascii=False)}
+- receipt(領収書): その場で支払い済みの証明。「領収書」「お預り」「お釣り」等。
+- invoice(請求書): これから支払う請求。「請求書」「お支払期限」「振込先」等。
+- meeting_minutes(議事録): 会議の記録。「議事録」「出席者」「決定事項」等。
+- contract(契約書): 当事者間の合意文書。「契約書」「甲」「乙」「契約期間」等。
+- lecture_material(講義資料): 大学等の講義・授業で配布される資料。「講義資料」「レジュメ」「シラバス」「第◯回」「履修」等。
+- specification(仕様書): システム・製品等の仕様や要件を定めた文書。「仕様書」「要件定義」「設計書」等。
+- 上記のどれにも明確に該当しない場合のみ other。
+
+organizationは、この文書を発行した側（発行元・請求元・差出人）の組織名にしてください。
+講義資料の場合は開講大学・学部や担当教員名など、この資料を作成・配布した側を指します。
+宛先・請求先・「様」「御中」で呼ばれる相手側の組織名は使わないでください。
+document_dateは、この文書自体の発行日・作成日にしてください。
+支払期限・有効期限・契約期間の開始日など、発行日以外の日付と取り違えないでください。
 document_dateは実在する日付のYYYY-MM-DDまたはnullにしてください。不明な日付を空文字や「不明」で返さずnullにしてください。
 organizationは100文字以下またはnull、confidenceは0から1またはnull、reasonは200文字以下またはnullにしてください。
 出力キーは document_type, organization, document_date, confidence, reason の5個だけです。
 
+規則ベース候補はキーワード一致による粗い推定であり、参考情報に過ぎません。
+<document>の本文の内容が規則ベース候補と食い違う場合は、本文の内容を優先してください。
+
 元ファイル名: {Path(original_file_name).name}
-規則ベース候補: {baseline_json}
+規則ベース候補（参考、誤っている場合あり）: {baseline_json}
 <document>
 {text[: self.input_chars]}
 </document>"""

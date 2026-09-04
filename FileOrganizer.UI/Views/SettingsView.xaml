@@ -166,6 +166,8 @@
                             </Grid>
                             <TextBlock Text="ショートカット" Style="{StaticResource CaptionStyle}" Margin="0,13,0,5" />
                             <TextBox Text="{Binding QuickLookShortcut}" Style="{StaticResource TextBoxStyle}" IsEnabled="{Binding IsQuickLookEnabled}" />
+                            <TextBlock Style="{StaticResource CaptionStyle}" Margin="0,5,0,0" TextWrapping="Wrap"
+                                       Text="例: Space / F / Q / Insert / F2　（英字A〜Z・数字0〜9の1文字、またはSpace・Enter・Tab・Insert・F1〜F12のいずれか）" />
                             <Button Content="診断ログを出力" Command="{Binding ExportDiagnosticsCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}" Margin="0,16,0,0" />
                             <TextBlock Text="ファイル名・抽出本文・個人情報をマスクして出力します。"

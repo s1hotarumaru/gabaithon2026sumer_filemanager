@@ -7,23 +7,53 @@ public sealed class QuickLookController : IDisposable
 {
     private readonly Func<bool> _isEnabled;
     private readonly Dispatcher _dispatcher;
-    private readonly KeyboardHook _keyboardHook;
     private readonly ExplorerSelectionProvider _selectionProvider = new();
     private readonly QuickLookPreviewProvider _previewProvider = new();
+    private KeyboardHook _keyboardHook;
     private QuickLookWindow? _window;
     private CancellationTokenSource? _previewCancellation;
     private int _isHandling;
     private bool _disposed;
 
-    public QuickLookController(Func<bool> isEnabled, Dispatcher dispatcher)
+    /// <param name="isEnabled">Quick Lookが有効かどうかを都度読み出すデリゲート（設定変更を即座に反映するため）。</param>
+    /// <param name="dispatcher">プレビュー生成・Window操作をUIスレッドへ戻すためのDispatcher。</param>
+    /// <param name="initialShortcut">
+    /// 起動時のショートカット文字列（<see cref="QuickLookShortcutKey"/>で解釈可能な表記）。
+    /// 解釈できない場合はSpaceにフォールバックする。実行中に変更する場合は<see cref="UpdateShortcut"/>を使う。
+    /// </param>
+    public QuickLookController(Func<bool> isEnabled, Dispatcher dispatcher, string initialShortcut = QuickLookShortcutKey.DefaultShortcut)
     {
         _isEnabled = isEnabled ?? throw new ArgumentNullException(nameof(isEnabled));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-        _keyboardHook = new KeyboardHook();
-        _keyboardHook.SpacePressed += OnSpacePressed;
+        _keyboardHook = CreateHook(initialShortcut);
     }
 
-    private void OnSpacePressed(object? sender, EventArgs e)
+    /// <summary>
+    /// 実行中にショートカットキーを変更する。既存のグローバルフックを解除し、新しいキーで登録し直す
+    /// （WH_KEYBOARD_LLは登録時に固定された仮想キーコードしか判定できないため差し替えが必要）。
+    /// </summary>
+    public void UpdateShortcut(string shortcut)
+    {
+        if (_disposed) return;
+
+        KeyboardHook oldHook = _keyboardHook;
+        KeyboardHook newHook = CreateHook(shortcut);
+        _keyboardHook = newHook;
+        oldHook.KeyPressed -= OnKeyPressed;
+        oldHook.Dispose();
+    }
+
+    private KeyboardHook CreateHook(string shortcut)
+    {
+        int virtualKeyCode = QuickLookShortcutKey.TryParse(shortcut, out int code, out _)
+            ? code
+            : QuickLookShortcutKey.DefaultVirtualKeyCode;
+        var hook = new KeyboardHook(virtualKeyCode);
+        hook.KeyPressed += OnKeyPressed;
+        return hook;
+    }
+
+    private void OnKeyPressed(object? sender, EventArgs e)
     {
         if (!_isEnabled()) return;
         _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(HandleSpaceAsync));
@@ -77,7 +107,7 @@ public sealed class QuickLookController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _keyboardHook.SpacePressed -= OnSpacePressed;
+        _keyboardHook.KeyPressed -= OnKeyPressed;
         _keyboardHook.Dispose();
         _previewCancellation?.Cancel();
         _previewCancellation?.Dispose();
